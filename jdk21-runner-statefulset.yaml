@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jdk21-runner
+  namespace: msa-dev
+  labels:
+    app: jdk21-runner
+spec:
+  serviceName: jdk21-runner
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jdk21-runner
+  template:
+    metadata:
+      labels:
+        app: jdk21-runner
+    spec:
+      serviceAccountName: gitlab-runner
+      imagePullSecrets:
+        - name: harbor-develop-registry-key
+
+      # Init Container: 根据 Pod 序号复制对应的 config
+      initContainers:
+        - name: config-init
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              POD_NAME=$(hostname)
+              POD_INDEX=${POD_NAME##*-}
+              echo "Pod name: $POD_NAME, Pod index: $POD_INDEX"
+              cp /config-source/config.$POD_INDEX.toml /config-dest/config.toml
+              echo "Copied config.$POD_INDEX.toml to config.toml"
+              cat /config-dest/config.toml
+          volumeMounts:
+            - name: config-source
+              mountPath: /config-source
+            - name: config-dest
+              mountPath: /config-dest
+
+      containers:
+        - name: gitlab-runner
+          # JDK 21 GitLab Runner 镜像
+          image: harbor-develop.zuzuche.net/ptjg-runner/jdk21-runner:1.0
+          imagePullPolicy: Always
+
+          command:
+            - /usr/local/bin/gitlab-runner
+            - run
+            - --working-directory=/root/builds
+            - --config=/etc/gitlab-runner/config.toml
+
+          env:
+            - name: JAVA_HOME
+              value: /opt/java/openjdk
+            - name: MAVEN_HOME
+              value: /opt/apache-maven-3.9.9
+            - name: PATH
+              value: /opt/apache-maven-3.9.9/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+
+          volumeMounts:
+            # 挂载 ConfigMap 中的 config.toml
+            - name: config-dest
+              mountPath: /etc/gitlab-runner
+
+            # 挂载宿主机 docker.sock（用于 docker build/push）
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+
+            # 持久化构建目录（可选，建议用于缓存）
+            - name: builds-dir
+              mountPath: /root/builds
+
+            # 持久化 Maven 本地仓库（可选，用于加速构建）
+            - name: maven-repo
+              mountPath: /root/.m2/repository
+
+      volumes:
+        # ConfigMap volume（所有配置）
+        - name: config-source
+          configMap:
+            name: jdk21-runner-config
+
+        # EmptyDir（init container 复制后的单个 config）
+        - name: config-dest
+          emptyDir: {}
+
+        # 宿主机 docker socket
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+
+  # 持久化存储配置（可选）
+  volumeClaimTemplates:
+    - metadata:
+        name: builds-dir
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"  # 根据集群实际情况修改
+        resources:
+          requests:
+            storage: 50Gi
+
+    - metadata:
+        name: maven-repo
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"  # 根据集群实际情况修改
+        resources:
+          requests:
+            storage: 30Gi

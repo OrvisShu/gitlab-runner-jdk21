@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jdk21-runner-config
+  namespace: msa-dev
+data:
+  # Pod-0 的配置
+  config.0.toml: |
+    concurrent = 1
+    check_interval = 0
+
+    [session_server]
+      session_timeout = 1800
+
+    # 连接内网 GitLab
+    [[runners]]
+      name = "jdk21-runner-0"
+      url = "http://git-repositories.zuzuche.com/"
+      token = "3650b9ea2783d07f30ed030f85ec30"
+      executor = "shell"
+      environment = ["JAVA_HOME=/opt/java/openjdk", "MAVEN_HOME=/opt/apache-maven-3.9.9", "PATH=/opt/java/openjdk/bin:/opt/apache-maven-3.9.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
+      tag_list = ["ptjg-jdk21-runner"]
+      [runners.custom_build_dir]
+      [runners.cache]
+        [runners.cache.s3]
+        [runners.cache.gcs]
+        [runners.cache.azure]
+
+    # 示例：连接外网 GitLab（如 niubibi.qeeq.cn）
+    # [[runners]]
+    #   name = "jdk21-runner-qeeq-0"
+    #   url = "https://niubibi.qeeq.cn/"
+    #   token = "ANOTHER_RUNNER_TOKEN_HERE"
+    #   executor = "shell"
+    #   tag_list = ["jdk21", "maven", "java21", "qeeq"]
+    #   [runners.custom_build_dir]
+    #   [runners.cache]
+
+  # Pod-1 的配置
+  config.1.toml: |
+    concurrent = 1
+    check_interval = 0
+
+    [session_server]
+      session_timeout = 1800
+
+    [[runners]]
+      name = "jdk21-runner-1"
+      url = "http://git-repositories.zuzuche.com/"
+      token = "3650b9ea2783d07f30ed030f85ec30"
+      executor = "shell"
+      environment = ["JAVA_HOME=/opt/java/openjdk", "MAVEN_HOME=/opt/apache-maven-3.9.9", "PATH=/opt/java/openjdk/bin:/opt/apache-maven-3.9.9/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
+      tag_list = ["ptjg-jdk21-runner"]
+      [runners.custom_build_dir]
+      [runners.cache]
+        [runners.cache.s3]
+        [runners.cache.gcs]
+        [runners.cache.azure]

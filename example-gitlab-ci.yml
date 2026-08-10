@@ -1,0 +1,159 @@
+# 示例 GitLab CI 配置文件
+# 展示如何使用 JDK 21 Runner
+
+stages:
+  - build
+  - test
+  - package
+  - deploy
+
+variables:
+  # Maven 配置
+  MAVEN_OPTS: "-Dmaven.repo.local=/root/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+
+  # Docker 镜像配置
+  DOCKER_IMAGE: "harbor-develop.zuzuche.net/your-project/your-app"
+  DOCKER_TAG: "${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
+
+# 编译构建
+build:
+  stage: build
+  tags:
+    - jdk21        # 使用 JDK 21 runner
+    - maven
+  before_script:
+    # 验证 Java 版本
+    - java -version
+    - mvn -version
+  script:
+    # 使用 Maven 绝对路径（推荐）
+    - /opt/apache-maven-3.9.9/bin/mvn $MAVEN_CLI_OPTS clean compile
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - target/
+  only:
+    - branches
+
+# 运行测试
+test:
+  stage: test
+  tags:
+    - jdk21
+    - maven
+  script:
+    - /opt/apache-maven-3.9.9/bin/mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+  only:
+    - branches
+
+# 打包应用
+package:
+  stage: package
+  tags:
+    - jdk21
+    - maven
+  script:
+    - /opt/apache-maven-3.9.9/bin/mvn $MAVEN_CLI_OPTS package -DskipTests
+  artifacts:
+    paths:
+      - target/*.jar
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - /^release\/.*$/
+
+# 构建并推送 Docker 镜像
+docker-build:
+  stage: package
+  tags:
+    - jdk21
+  before_script:
+    # Docker Login（推荐在 CI 中登录）
+    - echo "$HARBOR_PASSWORD" | docker login $HARBOR_URL -u "$HARBOR_USER" --password-stdin
+  script:
+    # 构建 Docker 镜像
+    - docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+    - docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+
+    # 推送到 Harbor
+    - docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+    - docker push ${DOCKER_IMAGE}:latest
+
+    # 清理本地镜像（节省空间）
+    - docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true
+    - docker rmi ${DOCKER_IMAGE}:latest || true
+  only:
+    - main
+    - develop
+
+# 部署到 Kubernetes
+deploy-dev:
+  stage: deploy
+  tags:
+    - jdk21
+  script:
+    # 使用 kubectl 更新部署
+    - kubectl set image deployment/your-app-name your-container=${DOCKER_IMAGE}:${DOCKER_TAG} -n msa-dev
+    - kubectl rollout status deployment/your-app-name -n msa-dev --timeout=5m
+  environment:
+    name: development
+    url: https://your-app-dev.example.com
+  only:
+    - develop
+
+deploy-prod:
+  stage: deploy
+  tags:
+    - jdk21
+  script:
+    - kubectl set image deployment/your-app-name your-container=${DOCKER_IMAGE}:${DOCKER_TAG} -n msa-prod
+    - kubectl rollout status deployment/your-app-name -n msa-prod --timeout=5m
+  environment:
+    name: production
+    url: https://your-app.example.com
+  when: manual  # 生产环境需要手动触发
+  only:
+    - main
+
+# JDK 21 特性示例任务
+jdk21-features-test:
+  stage: test
+  tags:
+    - jdk21
+  script:
+    - java -version
+    - |
+      cat > Test.java << 'EOF'
+      // JDK 21 新特性测试
+      void main() {
+          // String Templates (Preview in JDK 21)
+          String name = "World";
+          System.out.println("Hello, " + name + "!");
+
+          // Pattern Matching for switch
+          Object obj = "test";
+          String result = switch (obj) {
+              case String s -> "String: " + s;
+              case Integer i -> "Integer: " + i;
+              default -> "Unknown";
+          };
+          System.out.println(result);
+
+          // Record Patterns (Preview)
+          record Point(int x, int y) {}
+          Point p = new Point(10, 20);
+          System.out.println("Point: " + p);
+      }
+      EOF
+    - java --enable-preview --source 21 Test.java
+  only:
+    - branches

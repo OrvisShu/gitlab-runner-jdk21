@@ -1,0 +1,15 @@
+# 敏感配置文件
+local-config.toml
+local-config.toml;C/
+
+# Maven 本地配置
+.m2/
+
+# SSH 配置
+.ssh/
+
+# 其他
+.DS_Store
+*.swp
+*.swo
+*~
